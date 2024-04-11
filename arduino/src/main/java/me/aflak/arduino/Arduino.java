@@ -9,6 +9,7 @@ import android.hardware.usb.UsbDevice;
 import android.hardware.usb.UsbDeviceConnection;
 import android.hardware.usb.UsbManager;
 import android.util.Log;
+import androidx.core.content.ContextCompat;
 
 import com.felhr.usbserial.UsbSerialDevice;
 import com.felhr.usbserial.UsbSerialInterface;
@@ -77,7 +78,7 @@ public class Arduino implements UsbSerialInterface.UsbReadCallback {
         intentFilter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED);
         intentFilter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
         intentFilter.addAction(ACTION_USB_DEVICE_PERMISSION);
-        context.registerReceiver(usbReceiver, intentFilter);
+        context.registerReceiver(usbReceiver, intentFilter,ContextCompat.RECEIVER_EXPORTED);
 
         lastArduinoAttached = getAttachedArduino();
         if (lastArduinoAttached != null && listener != null) {
@@ -94,7 +95,7 @@ public class Arduino implements UsbSerialInterface.UsbReadCallback {
         IntentFilter filter = new IntentFilter();
         filter.addAction(ACTION_USB_DEVICE_PERMISSION);
         filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
-        context.registerReceiver(usbReceiver, filter);
+        context.registerReceiver(usbReceiver, filter,ContextCompat.RECEIVER_EXPORTED);
         usbManager.requestPermission(device, permissionIntent);
     }
 
