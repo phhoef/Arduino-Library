@@ -1,5 +1,6 @@
 package me.aflak.arduino;
 
+import android.annotation.SuppressLint;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -8,7 +9,9 @@ import android.content.IntentFilter;
 import android.hardware.usb.UsbDevice;
 import android.hardware.usb.UsbDeviceConnection;
 import android.hardware.usb.UsbManager;
+import android.os.Build;
 import android.util.Log;
+
 import androidx.core.content.ContextCompat;
 
 import com.felhr.usbserial.UsbSerialDevice;
@@ -71,6 +74,7 @@ public class Arduino implements UsbSerialInterface.UsbReadCallback {
         this.delimiter = DEFAULT_DELIMITER;
     }
 
+    @SuppressLint("NewApi")
     public void setArduinoListener(ArduinoListener listener) {
         this.listener = listener;
 
@@ -78,7 +82,7 @@ public class Arduino implements UsbSerialInterface.UsbReadCallback {
         intentFilter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED);
         intentFilter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
         intentFilter.addAction(ACTION_USB_DEVICE_PERMISSION);
-        context.registerReceiver(usbReceiver, intentFilter,ContextCompat.RECEIVER_EXPORTED);
+        context.registerReceiver(usbReceiver, intentFilter, Context.RECEIVER_EXPORTED);
 
         lastArduinoAttached = getAttachedArduino();
         if (lastArduinoAttached != null && listener != null) {
@@ -90,12 +94,13 @@ public class Arduino implements UsbSerialInterface.UsbReadCallback {
         this.listener = null;
     }
 
+    @SuppressLint("NewApi")
     public void open(UsbDevice device) {
-        PendingIntent permissionIntent = PendingIntent.getBroadcast(context, 0, new Intent(ACTION_USB_DEVICE_PERMISSION), PendingIntent.FLAG_MUTABLE);
+        PendingIntent permissionIntent = PendingIntent.getBroadcast(context, 0, new Intent(ACTION_USB_DEVICE_PERMISSION), PendingIntent.FLAG_IMMUTABLE);
         IntentFilter filter = new IntentFilter();
         filter.addAction(ACTION_USB_DEVICE_PERMISSION);
         filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
-        context.registerReceiver(usbReceiver, filter,ContextCompat.RECEIVER_EXPORTED);
+        context.registerReceiver(usbReceiver, filter, Context.RECEIVER_EXPORTED);
         usbManager.requestPermission(device, permissionIntent);
     }
 
