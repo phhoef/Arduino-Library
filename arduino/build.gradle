@@ -55,4 +55,4 @@ dependencies {
 }
 
 apply from: 'https://raw.githubusercontent.com/omaflak/Bintray/master/install.gradle'
-apply from: 'https://raw.githubusercontent.com/omaflak/Bintray/master/bintray.gradle'
+//apply from: 'https://raw.githubusercontent.com/omaflak/Bintray/master/bintray.gradle'
