@@ -96,7 +96,10 @@ public class Arduino implements UsbSerialInterface.UsbReadCallback {
 
     @SuppressLint("NewApi")
     public void open(UsbDevice device) {
-        PendingIntent permissionIntent = PendingIntent.getBroadcast(context, 0, new Intent(ACTION_USB_DEVICE_PERMISSION), PendingIntent.FLAG_MUTABLE);
+        Intent explicitIntent = new Intent(ACTION_USB_DEVICE_PERMISSION);
+        explicitIntent.setPackage(context.getPackageName());
+
+        PendingIntent permissionIntent = PendingIntent.getBroadcast(context, 0, explicitIntent, PendingIntent.FLAG_MUTABLE);
         IntentFilter filter = new IntentFilter();
         filter.addAction(ACTION_USB_DEVICE_PERMISSION);
         filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
