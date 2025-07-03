@@ -82,7 +82,13 @@ public class Arduino implements UsbSerialInterface.UsbReadCallback {
         intentFilter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED);
         intentFilter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
         intentFilter.addAction(ACTION_USB_DEVICE_PERMISSION);
-        context.registerReceiver(usbReceiver, intentFilter, Context.RECEIVER_EXPORTED);
+        
+        // Android 13+ kompatible Receiver-Registrierung
+        if (Build.VERSION.SDK_INT >= 33) { // TIRAMISU = API 33
+            context.registerReceiver(usbReceiver, intentFilter, Context.RECEIVER_EXPORTED);
+        } else {
+            context.registerReceiver(usbReceiver, intentFilter);
+        }
 
         lastArduinoAttached = getAttachedArduino();
         if (lastArduinoAttached != null && listener != null) {
@@ -96,31 +102,104 @@ public class Arduino implements UsbSerialInterface.UsbReadCallback {
 
     @SuppressLint("NewApi")
     public void open(UsbDevice device) {
-        Intent explicitIntent = new Intent(ACTION_USB_DEVICE_PERMISSION);
-        explicitIntent.setPackage(context.getPackageName());
-
-        PendingIntent permissionIntent = PendingIntent.getBroadcast(context, 0, explicitIntent, PendingIntent.FLAG_MUTABLE);
-        IntentFilter filter = new IntentFilter();
-        filter.addAction(ACTION_USB_DEVICE_PERMISSION);
-        filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
-        context.registerReceiver(usbReceiver, filter, Context.RECEIVER_EXPORTED);
+        Log.i("Arduino", "open() called for device: " + device.getDeviceName());
+        
+        // Prüfe ob Permission bereits erteilt ist
+        if (usbManager.hasPermission(device)) {
+            Log.i("Arduino", "Permission already granted, proceeding with connection...");
+            // Direkt verbinden ohne Permission-Request
+            processUsbConnection(device);
+            return;
+        }
+        
+        Log.i("Arduino", "No permission yet, requesting permission...");
+        
+        // Android 12+ kompatible PendingIntent-Flags
+        int flags;
+        if (Build.VERSION.SDK_INT >= 31) { // S = API 31
+            flags = PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_UPDATE_CURRENT;
+        } else {
+            flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        }
+        
+        PendingIntent permissionIntent = PendingIntent.getBroadcast(
+            context, 
+            0, 
+            new Intent(ACTION_USB_DEVICE_PERMISSION), 
+            flags
+        );
+        
+        Log.i("Arduino", "Requesting USB permission for device: " + device.getDeviceName());
         usbManager.requestPermission(device, permissionIntent);
+        Log.i("Arduino", "Permission requested - waiting for user response...");
     }
 
     public void reopen() {
         open(lastArduinoAttached);
     }
+    
+    private void processUsbConnection(UsbDevice device) {
+        Log.i("Arduino", "Processing USB connection for device: " + device.getDeviceName());
+        
+        if (hasId(String.valueOf(device.getVendorId()))) {
+            Log.i("Arduino", "Opening USB connection...");
+            connection = usbManager.openDevice(device);
+            if (connection != null) {
+                Log.i("Arduino", "USB connection established, creating serial device...");
+                serialPort = UsbSerialDevice.createUsbSerialDevice(device, connection);
+                if (serialPort != null) {
+                    Log.i("Arduino", "Serial device created, attempting to open...");
+                    if (serialPort.open()) {
+                        Log.i("Arduino", "Serial port opened successfully, configuring...");
+                        
+                        Log.i("Arduino", "Configuring serial parameters...");
+                        serialPort.setBaudRate(baudRate);
+                        serialPort.setDataBits(UsbSerialInterface.DATA_BITS_8);
+                        serialPort.setStopBits(UsbSerialInterface.STOP_BITS_1);
+                        serialPort.setParity(UsbSerialInterface.PARITY_NONE);
+                        serialPort.setFlowControl(UsbSerialInterface.FLOW_CONTROL_OFF);
+                        
+                        Log.i("Arduino", "Registering read callback: " + Arduino.this);
+                        serialPort.read(Arduino.this);
+                        Log.i("Arduino", "Read callback registered successfully");
+
+                        isOpened = true;
+                        Log.i("Arduino", "Serial port configuration complete, calling onArduinoOpened");
+
+                        if (listener != null) {
+                            listener.onArduinoOpened();
+                        }
+                    } else {
+                        Log.e("Arduino", "Failed to open serial port");
+                    }
+                } else {
+                    Log.e("Arduino", "Failed to create UsbSerialDevice");
+                }
+            } else {
+                Log.e("Arduino", "Failed to open USB device connection");
+            }
+        } else {
+            Log.w("Arduino", "Device vendor ID not recognized: " + device.getVendorId());
+        }
+    }
 
     public void close() {
         if (serialPort != null) {
             serialPort.close();
+            serialPort = null;
         }
         if (connection != null) {
             connection.close();
+            connection = null;
         }
 
         isOpened = false;
-        context.unregisterReceiver(usbReceiver);
+        
+        try {
+            context.unregisterReceiver(usbReceiver);
+        } catch (IllegalArgumentException e) {
+            Log.w("Arduino", "Receiver was not registered: " + e.getMessage());
+        }
     }
 
     public void send(byte[] bytes) {
@@ -144,19 +223,26 @@ public class Arduino implements UsbSerialInterface.UsbReadCallback {
     private class UsbReceiver extends BroadcastReceiver {
         @Override
         public void onReceive(Context context, Intent intent) {
+            Log.i("Arduino", "UsbReceiver.onReceive() called with action: " + intent.getAction());
             UsbDevice device;
             if (intent.getAction() != null) {
                 switch (intent.getAction()) {
                     case UsbManager.ACTION_USB_DEVICE_ATTACHED:
+                        Log.i("Arduino", "USB_DEVICE_ATTACHED received");
                         device = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
+                        Log.i("Arduino", "Device vendor ID: " + device.getVendorId());
                         if (hasId(String.valueOf(device.getVendorId()))) {
                             lastArduinoAttached = device;
                             if (listener != null) {
+                                Log.i("Arduino", "Calling onArduinoAttached");
                                 listener.onArduinoAttached(device);
                             }
+                        } else {
+                            Log.w("Arduino", "Device vendor ID not recognized: " + device.getVendorId());
                         }
                         break;
                     case UsbManager.ACTION_USB_DEVICE_DETACHED:
+                        Log.i("Arduino", "USB_DEVICE_DETACHED received");
                         device = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
                         if (hasId(String.valueOf(device.getVendorId()))) {
                             if (listener != null) {
@@ -165,33 +251,64 @@ public class Arduino implements UsbSerialInterface.UsbReadCallback {
                         }
                         break;
                     case ACTION_USB_DEVICE_PERMISSION:
-                        if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
+                        Log.i("Arduino", "USB_DEVICE_PERMISSION received");
+                        boolean permissionGranted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false);
+                        Log.i("Arduino", "Permission granted: " + permissionGranted);
+                        if (permissionGranted) {
                             device = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
+                            Log.i("Arduino", "Processing permission for device: " + device.getDeviceName());
                             if (hasId(String.valueOf(device.getVendorId()))) {
+                                Log.i("Arduino", "Opening USB connection...");
                                 connection = usbManager.openDevice(device);
-                                serialPort = UsbSerialDevice.createUsbSerialDevice(device, connection);
-                                if (serialPort != null) {
-                                    if (serialPort.open()) {
-                                        serialPort.setBaudRate(baudRate);
-                                        serialPort.setDataBits(UsbSerialInterface.DATA_BITS_8);
-                                        serialPort.setStopBits(UsbSerialInterface.STOP_BITS_1);
-                                        serialPort.setParity(UsbSerialInterface.PARITY_NONE);
-                                        serialPort.setFlowControl(UsbSerialInterface.FLOW_CONTROL_OFF);
-                                        serialPort.read(Arduino.this);
+                                if (connection != null) {
+                                    Log.i("Arduino", "USB connection established, creating serial device...");
+                                    serialPort = UsbSerialDevice.createUsbSerialDevice(device, connection);
+                                    if (serialPort != null) {
+                                        Log.i("Arduino", "Serial device created, attempting to open...");
+                                        if (serialPort.open()) {
+                                            Log.i("Arduino", "Serial port opened successfully, configuring...");
+                                            
+                                            Log.i("Arduino", "Configuring serial parameters...");
+                                            serialPort.setBaudRate(baudRate);
+                                            serialPort.setDataBits(UsbSerialInterface.DATA_BITS_8);
+                                            serialPort.setStopBits(UsbSerialInterface.STOP_BITS_1);
+                                            serialPort.setParity(UsbSerialInterface.PARITY_NONE);
+                                            serialPort.setFlowControl(UsbSerialInterface.FLOW_CONTROL_OFF);
+                                            
+                                            Log.i("Arduino", "Registering read callback: " + Arduino.this);
+                                            serialPort.read(Arduino.this);
+                                            Log.i("Arduino", "Read callback registered successfully");
 
-                                        isOpened = true;
+                                            isOpened = true;
+                                            Log.i("Arduino", "Serial port configuration complete, calling onArduinoOpened");
 
-                                        if (listener != null) {
-                                            listener.onArduinoOpened();
+                                            if (listener != null) {
+                                                listener.onArduinoOpened();
+                                            }
+                                        } else {
+                                            Log.e("Arduino", "Failed to open serial port");
                                         }
+                                    } else {
+                                        Log.e("Arduino", "Failed to create UsbSerialDevice");
                                     }
+                                } else {
+                                    Log.e("Arduino", "Failed to open USB device connection");
                                 }
+                            } else {
+                                Log.w("Arduino", "Device vendor ID not recognized during permission handling: " + device.getVendorId());
                             }
-                        } else if (listener != null) {
-                            listener.onUsbPermissionDenied();
+                        } else {
+                            Log.w("Arduino", "USB permission denied");
+                            if (listener != null) {
+                                listener.onUsbPermissionDenied();
+                            }
                         }
                         break;
+                    default:
+                        Log.w("Arduino", "Unknown intent action: " + intent.getAction());
                 }
+            } else {
+                Log.w("Arduino", "Intent action is null");
             }
         }
     }
@@ -234,17 +351,26 @@ public class Arduino implements UsbSerialInterface.UsbReadCallback {
 
     @Override
     public void onReceivedData(byte[] bytes) {
+        Log.i("Arduino", "************ onReceivedData CALLED! ************");
+        Log.i("Arduino", "Raw USB data received: " + Arrays.toString(bytes));
+        Log.i("Arduino", "Data length: " + (bytes != null ? bytes.length : 0));
+        
         if (bytes.length != 0) {
             List<Integer> idx = indexOf(bytes, delimiter);
             if (idx.isEmpty()) {
+                Log.i("Arduino", "No delimiter found, buffering " + bytes.length + " bytes");
                 bytesReceived.addAll(toByteList(bytes));
             } else {
+                Log.i("Arduino", "Delimiter found at positions: " + idx);
                 int offset = 0;
                 for (int index : idx) {
                     byte[] tmp = Arrays.copyOfRange(bytes, offset, index);
                     bytesReceived.addAll(toByteList(tmp));
+                    Log.i("Arduino", "Calling listener.onArduinoMessage with " + bytesReceived.size() + " bytes");
                     if (listener != null) {
                         listener.onArduinoMessage(toByteArray(bytesReceived));
+                    } else {
+                        Log.w("Arduino", "Listener is null! Cannot deliver message");
                     }
                     bytesReceived.clear();
                     offset = index + 1;
@@ -252,9 +378,12 @@ public class Arduino implements UsbSerialInterface.UsbReadCallback {
 
                 if (offset < bytes.length) {
                     byte[] tmp = Arrays.copyOfRange(bytes, offset, bytes.length);
+                    Log.i("Arduino", "Buffering remaining " + tmp.length + " bytes after delimiter");
                     bytesReceived.addAll(toByteList(tmp));
                 }
             }
+        } else {
+            Log.w("Arduino", "Received empty data array");
         }
     }
 

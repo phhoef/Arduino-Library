@@ -1,47 +1,30 @@
 apply plugin: 'com.android.library'
 
-ext {
-    bintrayRepo = 'maven'
-    bintrayName = 'arduino'
-
-    publishedGroupId = 'me.aflak.libraries'
-    libraryName = 'Arduino'
-    artifact = 'arduino'
-
-    libraryDescription = 'A lightweight Android library to communicate with Arduino through USB.'
-
-    siteUrl = 'https://github.com/omaflak/Arduino'
-    gitUrl = 'https://github.com/omaflak/Arduino.git'
-
-    libraryVersion = '1.4.6'
-
-    developerId = 'omaflak'
-    developerName = 'Omar Aflak'
-    developerEmail = 'aflakomar@gmail.com'
-
-    licenseName = 'The Apache Software License, Version 2.0'
-    licenseUrl = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
-    allLicenses = ["Apache-2.0"]
-}
-
 android {
-    compileSdkVersion 33
+    compileSdk 35
 
     defaultConfig {
-        minSdkVersion 15
-        targetSdkVersion 33
+        minSdk 26
+        targetSdk 35
         versionCode 9
         versionName "1.4.6"
 
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
-
     }
+    
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
+    
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    
+    namespace 'me.aflak.arduino'
 }
 
 dependencies {
@@ -53,6 +36,3 @@ dependencies {
 
     api 'com.github.felHR85:UsbSerial:6.1.0'
 }
-
-apply from: 'https://raw.githubusercontent.com/omaflak/Bintray/master/install.gradle'
-//apply from: 'https://raw.githubusercontent.com/omaflak/Bintray/master/bintray.gradle'
